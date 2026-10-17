@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XSS Demo Lab</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">🛡️ XSS Demo Lab</a>
+  <nav>
+    <a href="index.html" class="active">Home</a>
+  </nav>
+</header>
+
+<main>
+  <h1>Cross-Site Scripting (XSS) Demo Lab</h1>
+  <p class="subtitle">A small, self-contained, offline playground for learning the three classic flavors of XSS: Reflected, Stored, and DOM-based.</p>
+
+  <div class="warning">
+    <strong>⚠️ For learning only.</strong> Everything here runs 100% locally in your own browser — there is no real server, no real database, and no real other users. Nothing you type here ever leaves this HTML/JS. Never test payloads like these against websites or systems you don't own or have explicit written permission to test.
+  </div>
+
+  <div class="card">
+    <h3>How this lab is organized</h3>
+    <p>Each of the three lab pages below follows the same structure:</p>
+    <ul class="steps">
+      <li><strong>Intro</strong> — what this type of XSS is and why it happens.</li>
+      <li><strong>How to perform it</strong> — the general attacker mindset and steps, explained conceptually.</li>
+      <li><strong>Hands-on lab</strong> — a small intentionally-vulnerable widget you can attack yourself, with a success flag that lights up when you pull it off.</li>
+    </ul>
+  </div>
+
+  <div class="grid-3">
+    <a class="lab-tile" href="reflected/index.html">
+      <span class="badge reflected">Reflected XSS</span>
+      <h3>Reflected XSS</h3>
+      <p>Payload travels in the request (e.g. a URL parameter) and is echoed straight back into the page's HTML.</p>
+    </a>
+    <a class="lab-tile" href="stored/index.html">
+      <span class="badge stored">Stored XSS</span>
+      <h3>Stored XSS</h3>
+      <p>Payload is saved (e.g. in a comment) and then rendered unsanitized for every visitor who later views it.</p>
+    </a>
+    <a class="lab-tile" href="dom/index.html">
+      <span class="badge dom">DOM-based XSS</span>
+      <h3>DOM-based XSS</h3>
+      <p>Payload never touches a server at all — vulnerable client-side JS reads untrusted data (like the URL hash) and writes it straight into the DOM.</p>
+    </a>
+  </div>
+
+  <h2>What you'll need</h2>
+  <p>Just a browser. Open <code>index.html</code> (this file) directly, or serve the folder with any static file server. No build step, no dependencies, no backend.</p>
+</main>
+
+<footer>Offline XSS training lab · Vanilla HTML/CSS/JS · No data leaves your browser</footer>
+
+</body>
+</html>

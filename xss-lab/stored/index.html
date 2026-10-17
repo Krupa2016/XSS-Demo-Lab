@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stored XSS Lab</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="../index.html">🛡️ XSS Demo Lab</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../reflected/index.html">Reflected</a>
+    <a href="../stored/index.html" class="active">Stored</a>
+    <a href="../dom/index.html">DOM-based</a>
+  </nav>
+</header>
+
+<main>
+  <span class="badge stored">Stored XSS</span>
+  <h1>Stored (Persistent) Cross-Site Scripting</h1>
+  <p class="subtitle">The "poisoned guestbook" vulnerability.</p>
+
+  <h2>1. Intro</h2>
+  <div class="card">
+    <p>Stored XSS (also called persistent XSS) happens when user-supplied input is saved on the server — in a database, a file, a comment thread, a user profile field, etc. — and later rendered back into pages <em>without sanitization</em>, for every user who views that content.</p>
+    <p>This makes it more dangerous than reflected XSS: the attacker doesn't need to trick a specific victim into clicking a crafted link. They just submit the payload once (e.g. as a blog comment, product review, username, or support ticket), and <strong>every single visitor</strong> who later views that page automatically executes the attacker's script.</p>
+    <p><strong>Real-world impact:</strong> mass session hijacking, worm-like self-propagating payloads (e.g. the 2005 Samy MySpace worm), admin panel takeover if an admin views the poisoned content, persistent defacement.</p>
+  </div>
+
+  <h2>2. How it's performed (conceptually)</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><strong>Find a persistence point.</strong> Any feature that stores user text and later displays it to other users: comments, reviews, forum posts, display names, bios, support tickets, chat messages.</li>
+      <li><strong>Check how it's rendered later.</strong> Does the app re-encode it when displaying, or does it trust what was stored? Submit a harmless unique marker first and inspect the rendered page's source.</li>
+      <li><strong>Submit a payload instead of normal content.</strong> E.g. post a "comment" that is actually <code>&lt;script&gt;...&lt;/script&gt;</code> or an <code>&lt;img onerror=...&gt;</code> tag.</li>
+      <li><strong>Wait for a victim to view it.</strong> Could be any visitor to that page, or specifically an admin/moderator who reviews submitted content (often a higher-value target since they may have elevated session privileges).</li>
+      <li><strong>Payload executes in the victim's browser</strong>, in the trusted origin's context — able to read cookies (if not HttpOnly), make authenticated requests, modify the DOM, etc.</li>
+    </ol>
+    <p class="hint">Defensively: always HTML-encode stored content at render time (never trust that it was "already safe" when stored), use a strict Content-Security-Policy, and consider sanitizing/stripping dangerous HTML on input too as defense in depth.</p>
+  </div>
+
+  <h2>3. Hands-on Lab</h2>
+  <div class="card lab">
+    <h3>📝 Vulnerable Guestbook</h3>
+    <p>Post a "comment" below. It's saved to this browser's <code>localStorage</code> (standing in for a database) and re-rendered on every page load using <code>innerHTML</code> — unsanitized. Reload the page after posting to see your "stored" payload fire again, just like a real visitor would.</p>
+
+    <label for="nameInput">Your name</label>
+    <input type="text" id="nameInput" placeholder="e.g. Alex">
+
+    <label for="commentInput">Comment</label>
+    <textarea id="commentInput" placeholder="Try: &lt;img src=x onerror=alert('stored-xss')&gt;"></textarea>
+
+    <button id="postBtn">Post Comment</button>
+    <button class="secondary" id="resetBtn" type="button">Reset Guestbook</button>
+
+    <div class="output-box" id="guestbookBox">
+      <span class="label-tag">Guestbook (persisted in localStorage)</span>
+      <div id="commentsList"></div>
+    </div>
+
+    <div class="flag" id="xss-flag">✅ Payload executed! Your comment is now permanently stored and will re-fire for anyone (including you, on reload) who views this page.</div>
+
+    <p class="hint">Hint: post the payload once, then hit refresh — notice it executes again automatically, with no further action from you. That's what makes stored XSS persistent.</p>
+  </div>
+
+  <div class="card">
+    <h3>Show vulnerable source (click to reveal)</h3>
+    <details>
+      <summary>stored/index.html — relevant snippet</summary>
+<pre>// THIS IS INTENTIONALLY INSECURE CODE, FOR TRAINING ONLY
+function renderComments() {
+  const comments = JSON.parse(localStorage.getItem('xss_lab_comments') || '[]');
+  commentsList.innerHTML = comments.map(c =>
+    `&lt;div class="comment-item"&gt;
+       &lt;div class="comment-meta"&gt;${c.name}&lt;/div&gt;
+       &lt;div&gt;${c.text}&lt;/div&gt;   &lt;!-- raw, unescaped --&gt;
+     &lt;/div&gt;`
+  ).join('');
+}</pre>
+      <p class="hint">The fix: HTML-escape <code>c.name</code> and <code>c.text</code> before building the markup (or build nodes with <code>textContent</code> instead of a template string fed to <code>innerHTML</code>).</p>
+    </details>
+  </div>
+</main>
+
+<footer>Offline XSS training lab · Vanilla HTML/CSS/JS · No data leaves your browser</footer>
+
+<script src="../js/common.js"></script>
+<script>
+  const STORAGE_KEY = 'xss_lab_comments';
+  const commentsList = document.getElementById('commentsList');
+  const nameInput = document.getElementById('nameInput');
+  const commentInput = document.getElementById('commentInput');
+
+  function getComments() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveComments(comments) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(comments));
+  }
+
+  function renderComments() {
+    const comments = getComments();
+    if (comments.length === 0) {
+      commentsList.textContent = 'No comments yet. Be the first!';
+      return;
+    }
+    // VULNERABLE: comment name/text are inserted into innerHTML unescaped
+    commentsList.innerHTML = comments.map(c =>
+      '<div class="comment-item">' +
+        '<div class="comment-meta">' + c.name + ' says:</div>' +
+        '<div>' + c.text + '</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  document.getElementById('postBtn').addEventListener('click', () => {
+    const name = nameInput.value.trim() || 'Anonymous';
+    const text = commentInput.value;
+    if (!text.trim()) return;
+    const comments = getComments();
+    comments.push({ name, text, ts: Date.now() });
+    saveComments(comments);
+    commentInput.value = '';
+    renderComments();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_KEY);
+    renderComments();
+    document.getElementById('xss-flag').style.display = 'none';
+  });
+
+  renderComments();
+</script>
+
+</body>
+</html>

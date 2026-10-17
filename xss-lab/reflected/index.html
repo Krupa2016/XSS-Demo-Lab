@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reflected XSS Lab</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="../index.html">🛡️ XSS Demo Lab</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../reflected/index.html" class="active">Reflected</a>
+    <a href="../stored/index.html">Stored</a>
+    <a href="../dom/index.html">DOM-based</a>
+  </nav>
+</header>
+
+<main>
+  <span class="badge reflected">Reflected XSS</span>
+  <h1>Reflected Cross-Site Scripting</h1>
+  <p class="subtitle">The classic "echoed search box" vulnerability.</p>
+
+  <h2>1. Intro</h2>
+  <div class="card">
+    <p>Reflected XSS happens when a web application takes input from a request — most commonly a URL query string parameter, but it could also be a form field, header, or cookie — and immediately writes it back into the HTML response <em>without properly encoding it first</em>.</p>
+    <p>Because the payload is "reflected" straight back in the same request/response cycle, it's never stored anywhere. That means an attacker usually has to trick a victim into clicking a specially crafted link (e.g. in a phishing email or a forum post) that contains the malicious payload in the URL. When the victim's browser loads that link, their own browser executes the attacker's script in the context of the trusted site.</p>
+    <p><strong>Real-world impact:</strong> session/cookie theft, keylogging, defacement, forced actions on the victim's behalf, credential phishing overlays, etc.</p>
+  </div>
+
+  <h2>2. How it's performed (conceptually)</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><strong>Find an input that gets reflected.</strong> Search boxes, error messages ("No results for '...'"), "welcome back, [name]" banners, and form validation messages are classic spots. Try entering a unique marker string (e.g. <code>zzz12345</code>) and view-source the response to see where it lands.</li>
+      <li><strong>Check how it's reflected.</strong> Is it inside plain HTML text? Inside an HTML attribute (<code>value="..."</code>)? Inside a <code>&lt;script&gt;</code> block? Each context needs a slightly different payload to "break out" of it.</li>
+      <li><strong>Craft a breakout payload.</strong> For plain HTML text context, something as simple as <code>&lt;script&gt;alert(1)&lt;/script&gt;</code> or an event-handler trick like <code>&lt;img src=x onerror=alert(1)&gt;</code> is often enough.</li>
+      <li><strong>Confirm execution.</strong> If your JS runs (e.g. an alert box pops, or the page makes a request to a URL you control), the input is unsanitized.</li>
+      <li><strong>Weaponize the URL.</strong> Encode the payload into a query string, then get a victim to click it — e.g. via a shortened link, QR code, or a link embedded in a message.</li>
+    </ol>
+    <p class="hint">Defensively: the fix is always output encoding — HTML-escape user input before writing it into HTML (or use safe DOM APIs like <code>textContent</code> instead of <code>innerHTML</code>), plus a strong Content-Security-Policy as defense in depth.</p>
+  </div>
+
+  <h2>3. Hands-on Lab</h2>
+  <div class="card lab">
+    <h3>🔎 Vulnerable "Site Search"</h3>
+    <p>This mini search box takes your query from the URL's <code>?q=</code> parameter and echoes it directly into the page using <code>innerHTML</code> — with zero sanitization. Try to get a JavaScript <code>alert()</code> to fire.</p>
+
+    <label for="searchInput">Search this site</label>
+    <input type="text" id="searchInput" placeholder="Try: &lt;img src=x onerror=alert('xss')&gt;">
+    <button id="searchBtn">Search</button>
+    <button class="secondary" id="clearBtn" type="button">Clear</button>
+
+    <div class="output-box" id="resultsBox">
+      <span class="label-tag">Results</span>
+      <div id="resultsContent">No search performed yet.</div>
+    </div>
+
+    <div class="flag" id="xss-flag">✅ Payload executed! You've successfully triggered a Reflected XSS.</div>
+
+    <p class="hint">Hints: try an <code>&lt;img&gt;</code> tag with a bad <code>src</code> and an <code>onerror</code> handler, or a plain <code>&lt;script&gt;</code> tag, or an <code>&lt;svg onload=...&gt;</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3>Show vulnerable source (click to reveal)</h3>
+    <details>
+      <summary>reflected/index.html — relevant snippet</summary>
+<pre>// THIS IS INTENTIONALLY INSECURE CODE, FOR TRAINING ONLY
+const q = new URLSearchParams(window.location.search).get('q');
+resultsContent.innerHTML = 'Showing results for: ' + q;  // <-- raw concatenation into innerHTML</pre>
+      <p class="hint">The fix: use <code>textContent</code> instead of <code>innerHTML</code>, or HTML-escape <code>q</code> before inserting it.</p>
+    </details>
+  </div>
+</main>
+
+<footer>Offline XSS training lab · Vanilla HTML/CSS/JS · No data leaves your browser</footer>
+
+<script src="../js/common.js"></script>
+<script>
+  const resultsContent = document.getElementById('resultsContent');
+  const searchInput = document.getElementById('searchInput');
+
+  function renderFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    if (q !== null) {
+      searchInput.value = q;
+      // VULNERABLE LINE: user-controlled string concatenated straight into innerHTML
+      resultsContent.innerHTML = 'Showing results for: ' + q;
+    }
+  }
+
+  document.getElementById('searchBtn').addEventListener('click', () => {
+    const val = searchInput.value;
+    const url = new URL(window.location.href);
+    url.searchParams.set('q', val);
+    window.history.pushState({}, '', url);
+    renderFromQuery();
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('q');
+    window.history.pushState({}, '', url);
+    resultsContent.textContent = 'No search performed yet.';
+    searchInput.value = '';
+    document.getElementById('xss-flag').style.display = 'none';
+  });
+
+  // allow Enter key to submit
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('searchBtn').click();
+  });
+
+  // render on load in case the page was opened with ?q= already in the URL
+  renderFromQuery();
+</script>
+
+</body>
+</html>

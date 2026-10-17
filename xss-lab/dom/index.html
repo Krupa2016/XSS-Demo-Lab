@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOM-based XSS Lab</title>
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="../index.html">🛡️ XSS Demo Lab</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../reflected/index.html">Reflected</a>
+    <a href="../stored/index.html">Stored</a>
+    <a href="../dom/index.html" class="active">DOM-based</a>
+  </nav>
+</header>
+
+<main>
+  <span class="badge dom">DOM-based XSS</span>
+  <h1>DOM-based Cross-Site Scripting</h1>
+  <p class="subtitle">The "it never even touched the server" vulnerability.</p>
+
+  <h2>1. Intro</h2>
+  <div class="card">
+    <p>DOM-based XSS is different from reflected and stored XSS in one key way: <strong>the server is never involved in the vulnerable data flow at all.</strong> The entire bug lives in client-side JavaScript.</p>
+    <p>It happens when JavaScript already running on the page takes data from an attacker-controllable <strong>source</strong> — things like <code>location.hash</code>, <code>location.search</code>, <code>document.referrer</code>, <code>window.name</code>, or data read from storage — and passes it into a dangerous <strong>sink</strong> — things like <code>innerHTML</code>, <code>document.write()</code>, <code>eval()</code>, or <code>setAttribute('href', ...)</code> — without sanitizing it first.</p>
+    <p>Because the fragment (the part of a URL after <code>#</code>) is <em>never sent to the server</em> at all, this kind of payload can completely bypass server-side defenses like input validation or a WAF that only inspects the request — the vulnerable code path only ever exists inside the victim's browser.</p>
+    <p><strong>Real-world impact:</strong> identical to reflected/stored XSS once triggered (cookie/session theft, account takeover, etc.) — only the delivery mechanism and the fact that it's invisible to server-side logging differ.</p>
+  </div>
+
+  <h2>2. How it's performed (conceptually)</h2>
+  <div class="card">
+    <ol class="steps">
+      <li><strong>Read the client-side JavaScript</strong> (it's always visible to anyone — "view source" / dev tools). Look for code that reads from a source like <code>location.hash</code>, <code>location.search</code>, <code>document.URL</code>, <code>document.referrer</code>, or <code>window.name</code>.</li>
+      <li><strong>Trace where that value goes.</strong> Does it get written into <code>innerHTML</code>/<code>outerHTML</code>? Passed to <code>document.write()</code>? Used inside <code>eval()</code> or a <code>new Function(...)</code>? Used to set an attribute like <code>href</code>, <code>src</code>, or an inline event handler?</li>
+      <li><strong>Craft a payload for that specific source → sink path.</strong> For a <code>location.hash → innerHTML</code> flow, an HTML payload works, e.g. <code>#&lt;img src=x onerror=alert(1)&gt;</code>.</li>
+      <li><strong>Deliver the URL to a victim.</strong> Since the payload lives entirely in the fragment, it works even against sites that heavily validate everything sent to the server — because this part of the URL is never sent there.</li>
+    </ol>
+    <p class="hint">Defensively: treat every client-side source the same as you'd treat server input — never pass it to a dangerous sink unsanitized. Prefer <code>textContent</code>, use the browser's built-in encoding (e.g. <code>element.setAttribute</code> with validated values), and avoid <code>eval</code>/<code>document.write</code> entirely.</p>
+  </div>
+
+  <h2>3. Hands-on Lab</h2>
+  <div class="card lab">
+    <h3>👋 Vulnerable "Welcome Banner"</h3>
+    <p>This widget reads a name straight out of the URL's <strong>hash fragment</strong> (<code>#name=...</code>) — entirely client-side, nothing is sent to any server — and writes it into the page with <code>innerHTML</code>. Try to make it execute JavaScript.</p>
+
+    <label for="hashInput">Set the URL hash (try typing a payload, then click "Apply")</label>
+    <input type="text" id="hashInput" placeholder="Try: &lt;img src=x onerror=alert('dom-xss')&gt;">
+    <button id="applyBtn">Apply to URL hash</button>
+    <button class="secondary" id="resetHashBtn" type="button">Clear</button>
+
+    <div class="output-box" id="welcomeBox">
+      <span class="label-tag">Rendered banner</span>
+      <div id="welcomeContent">👋 Welcome, guest!</div>
+    </div>
+
+    <div class="flag" id="xss-flag">✅ Payload executed! You just triggered a DOM-based XSS — notice the server was never involved.</div>
+
+    <p class="hint">Hint: after clicking Apply, look at your browser's address bar — the payload is sitting right there after the <code>#</code>, fully visible, and would still work even if you bookmarked or shared that exact link.</p>
+  </div>
+
+  <div class="card">
+    <h3>Show vulnerable source (click to reveal)</h3>
+    <details>
+      <summary>dom/index.html — relevant snippet</summary>
+<pre>// THIS IS INTENTIONALLY INSECURE CODE, FOR TRAINING ONLY
+function renderFromHash() {
+  const hash = decodeURIComponent(window.location.hash.slice(1)); // source
+  const match = hash.match(/name=(.*)/);
+  if (match) {
+    const name = match[1];
+    welcomeContent.innerHTML = '👋 Welcome, ' + name + '!';  // sink: innerHTML
+  }
+}
+window.addEventListener('hashchange', renderFromHash);</pre>
+      <p class="hint">The fix: use <code>textContent</code> instead of <code>innerHTML</code>, or HTML-escape <code>name</code> before inserting it into markup.</p>
+    </details>
+  </div>
+</main>
+
+<footer>Offline XSS training lab · Vanilla HTML/CSS/JS · No data leaves your browser</footer>
+
+<script src="../js/common.js"></script>
+<script>
+  const welcomeContent = document.getElementById('welcomeContent');
+  const hashInput = document.getElementById('hashInput');
+
+  function renderFromHash() {
+    const raw = window.location.hash.slice(1); // everything after '#'
+    if (!raw) {
+      welcomeContent.textContent = '👋 Welcome, guest!';
+      return;
+    }
+    let name = raw;
+    const match = raw.match(/^name=(.*)$/);
+    if (match) {
+      name = decodeURIComponent(match[1]);
+    } else {
+      name = decodeURIComponent(raw);
+    }
+    // VULNERABLE: untrusted client-side source (location.hash) -> dangerous sink (innerHTML)
+    welcomeContent.innerHTML = '👋 Welcome, ' + name + '!';
+  }
+
+  document.getElementById('applyBtn').addEventListener('click', () => {
+    const val = hashInput.value;
+    window.location.hash = 'name=' + encodeURIComponent(val);
+    // encodeURIComponent above simulates a "normal" app; many real DOM XSS
+    // bugs happen because apps decode the hash manually and then use it raw,
+    // exactly like renderFromHash() does above.
+    renderFromHash();
+  });
+
+  document.getElementById('resetHashBtn').addEventListener('click', () => {
+    history.pushState('', document.title, window.location.pathname + window.location.search);
+    hashInput.value = '';
+    welcomeContent.textContent = '👋 Welcome, guest!';
+    document.getElementById('xss-flag').style.display = 'none';
+  });
+
+  hashInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('applyBtn').click();
+  });
+
+  window.addEventListener('hashchange', renderFromHash);
+
+  // render on initial load in case the page was opened with a hash already
+  renderFromHash();
+</script>
+
+</body>
+</html>
